@@ -152,11 +152,13 @@ header.top h1{font-size:17px;margin:0;letter-spacing:.02em;white-space:nowrap}
 h3.sec{font-size:13px;color:var(--muted);margin:18px 2px 8px;letter-spacing:.05em}
 .tbl-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
 table{width:100%;border-collapse:collapse;background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden}
-th,td{padding:7px 8px;font-size:12.5px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap}
+th,td{padding:7px 5px;font-size:12px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap}
+th:first-child,td:first-child{padding-left:8px} th:last-child,td:last-child{padding-right:8px}
 th{background:var(--surface-2);font-size:11px;color:var(--muted);font-weight:700;letter-spacing:.03em}
 tr:last-child td{border-bottom:none}
 tr.me td{background:var(--accent-soft);font-weight:700}
 td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+td .sub{color:var(--faint);font-size:10px;font-weight:400}
 </style>
 </head>
 <body>
@@ -343,6 +345,9 @@ function scoreText(m,rev){
   return ss.map(([a,b])=>rev? b+'-'+a : a+'-'+b).join(' / ');
 }
 const RES_JP={W:'勝',L:'敗',D:'分',N:'－'};
+/* 得失差を ＋3 / −2 の形に。0は±0 */
+function diff(n){ return n>0? '+'+n : (n<0? '−'+Math.abs(n) : '±0'); }
+function diffColor(n){ return n>0?'var(--win)':(n<0?'var(--lose)':'var(--muted)'); }
 function fmtDate(d){
   if(!d) return '日付未設定';
   const [y,mo,da]=d.split('-').map(Number);
@@ -477,13 +482,17 @@ function leagueHTML(ev,st,all){
   if(tbl){
     const rows=standings(st);
     table=`<div class="tbl-wrap" style="margin-top:8px"><table><thead><tr>
-      <th>#</th><th>チーム</th><th class="num">試</th><th class="num">勝</th><th class="num">敗</th><th class="num">セット</th><th class="num">得点</th>
-    </tr></thead><tbody>${rows.map((r,i)=>`<tr class="${r.i===st.myIdx?'me':''}">
-      <td class="mono">${i+1}</td><td>${esc(r.t)}</td><td class="num mono">${r.G}</td>
-      <td class="num mono">${r.W}</td><td class="num mono">${r.L}</td>
-      <td class="num mono">${r.sw}-${r.sl}</td><td class="num mono">${r.pf}-${r.pa}</td></tr>`).join('')}
+      <th>#</th><th>チーム</th><th class="num">勝敗</th><th class="num">セット差</th><th class="num">得失点差</th>
+    </tr></thead><tbody>${rows.map((r,i)=>{
+      const sd=r.sw-r.sl, pd=r.pf-r.pa;
+      return `<tr class="${r.i===st.myIdx?'me':''}">
+      <td class="mono">${i+1}</td><td>${esc(r.t)}</td>
+      <td class="num mono">${r.W}${r.D?'-'+r.D:''}-${r.L}</td>
+      <td class="num mono" style="color:${diffColor(sd)}">${diff(sd)} <span class="sub">${r.sw}-${r.sl}</span></td>
+      <td class="num mono" style="color:${diffColor(pd)}">${diff(pd)} <span class="sub">${r.pf}-${r.pa}</span></td></tr>`;
+    }).join('')}
     </tbody></table></div>
-    <p class="hint" style="margin-top:6px">順位＝①勝数 ②セット得失 ③得点得失</p>`;
+    <p class="hint" style="margin-top:6px">順位＝①勝数 ②セット差 ③得失点差（小さい数字は 取得-被取得）</p>`;
   }
   return `<div class="stage">
     <div class="stage-head">
@@ -538,8 +547,9 @@ function renderStats(){
       pf+=me; pa+=you; if(me>you)sw++; else if(me<you)sl++;
     });
     const k=(x.opp||'相手未設定').trim();
-    opp[k]=opp[k]||{W:0,L:0,D:0};
+    opp[k]=opp[k]||{W:0,L:0,D:0,pd:0};
     opp[k][x.res==='D'?'D':x.res]++;
+    ss.forEach(([a,b])=>{ opp[k].pd += (x.rev? +b-+a : +a-+b); });
   }));
   const rate=games? Math.round(W/games*1000)/10 : 0;
   const list=Object.entries(opp).sort((a,b)=>(b[1].W+b[1].L+b[1].D)-(a[1].W+a[1].L+a[1].D));
@@ -556,12 +566,12 @@ function renderStats(){
       <div class="stat"><div class="n" style="color:var(--lose)">${L}</div><div class="k">負け</div></div>
     </div>
     <div class="stat-grid" style="grid-template-columns:repeat(2,1fr)">
-      <div class="stat"><div class="n mono" style="font-size:17px">${sw} - ${sl}</div><div class="k">獲得セット</div></div>
-      <div class="stat"><div class="n mono" style="font-size:17px">${pf} - ${pa}</div><div class="k">総得点 - 総失点</div></div>
+      <div class="stat"><div class="n mono" style="font-size:17px">${sw} - ${sl} <span style="font-size:13px;color:${diffColor(sw-sl)}">${diff(sw-sl)}</span></div><div class="k">獲得セット</div></div>
+      <div class="stat"><div class="n mono" style="font-size:17px">${pf} - ${pa} <span style="font-size:13px;color:${diffColor(pf-pa)}">${diff(pf-pa)}</span></div><div class="k">総得点 - 総失点</div></div>
     </div>
     <h3 class="sec">対戦相手ごとの成績</h3>
-    ${list.length? `<div class="tbl-wrap"><table><thead><tr><th>相手</th><th class="num">試合</th><th class="num">勝</th><th class="num">分</th><th class="num">敗</th></tr></thead><tbody>
-      ${list.map(([k,v])=>`<tr><td>${esc(k)}</td><td class="num mono">${v.W+v.L+v.D}</td><td class="num mono">${v.W}</td><td class="num mono">${v.D}</td><td class="num mono">${v.L}</td></tr>`).join('')}
+    ${list.length? `<div class="tbl-wrap"><table><thead><tr><th>相手</th><th class="num">試合</th><th class="num">勝</th><th class="num">分</th><th class="num">敗</th><th class="num">得失点差</th></tr></thead><tbody>
+      ${list.map(([k,v])=>`<tr><td>${esc(k)}</td><td class="num mono">${v.W+v.L+v.D}</td><td class="num mono">${v.W}</td><td class="num mono">${v.D}</td><td class="num mono">${v.L}</td><td class="num mono" style="color:${diffColor(v.pd)}">${diff(v.pd)}</td></tr>`).join('')}
     </tbody></table></div>` : '<p class="empty">試合を登録すると集計されます。</p>'}
     <h3 class="sec">年別の出場数</h3>
     ${Object.keys(byYear).length? `<table><tbody>
