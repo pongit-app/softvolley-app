@@ -208,6 +208,10 @@ td .sub{color:var(--faint);font-size:10px;font-weight:400}
   <label style="display:block;font-size:11.5px;color:var(--muted);font-weight:600;margin:8px 2px 6px;letter-spacing:.03em">チーム名（対戦表の番号順）</label>
   <div id="lgTeams"></div>
   <div class="fld" style="margin-top:10px"><label>自分のチーム</label><select id="lgMine"></select></div>
+  <div class="fld"><label>順位の決め方</label><select id="lgRule">
+    <option value="win">勝数 → セット差 → 得失点差</option>
+    <option value="sets">獲得セット数 → 得失点差</option>
+  </select></div>
   <p class="hint">保存すると総当たりの全カードを自動作成します（4〜6チームは大会でよく使われる試合順・審判割当つき）。チーム数を変えても、入力済みのスコアは同じ顔合わせなら引き継ぎます。</p>
   <button class="btn primary" id="lgSave" style="margin-top:4px">保存</button>
   <button class="btn" id="lgCancel" style="margin-top:8px">キャンセル</button>
@@ -390,7 +394,12 @@ function standings(st){
       if(+a>+b){A.sw++;B.sl++;} else if(+a<+b){A.sl++;B.sw++;}
     });
   });
-  return rows.sort((x,y)=> y.W-x.W || (y.sw-y.sl)-(x.sw-x.sl) || (y.pf-y.pa)-(x.pf-x.pa) || x.i-y.i);
+  const rule=st.rule||'win';
+  return rows.sort((x,y)=>{
+    const sdx=x.sw-x.sl, sdy=y.sw-y.sl, pdx=x.pf-x.pa, pdy=y.pf-y.pa;
+    if(rule==='sets') return y.sw-x.sw || pdy-pdx || sdy-sdx || x.i-y.i;   /* 獲得セット数 → 得失点差 */
+    return y.W-x.W || sdy-sdx || pdy-pdx || x.i-y.i;                        /* 勝数 → セット差 → 得失点差 */
+  });
 }
 
 /* ===== 総当たりカード生成（スコア引き継ぎ） ===== */
@@ -481,18 +490,21 @@ function leagueHTML(ev,st,all){
   let table='';
   if(tbl){
     const rows=standings(st);
+    const rule=st.rule||'win', bySets=rule==='sets';
     table=`<div class="tbl-wrap" style="margin-top:8px"><table><thead><tr>
-      <th>#</th><th>チーム</th><th class="num">勝敗</th><th class="num">セット差</th><th class="num">得失点差</th>
+      <th>#</th><th>チーム</th><th class="num">勝敗</th>
+      <th class="num">${bySets?'セット ▼':'セット差 ▼'}</th>
+      <th class="num">得失点差</th>
     </tr></thead><tbody>${rows.map((r,i)=>{
       const sd=r.sw-r.sl, pd=r.pf-r.pa;
       return `<tr class="${r.i===st.myIdx?'me':''}">
       <td class="mono">${i+1}</td><td>${esc(r.t)}</td>
       <td class="num mono">${r.W}${r.D?'-'+r.D:''}-${r.L}</td>
-      <td class="num mono" style="color:${diffColor(sd)}">${diff(sd)} <span class="sub">${r.sw}-${r.sl}</span></td>
+      <td class="num mono"${bySets?'':` style="color:${diffColor(sd)}"`}>${bySets? r.sw+' <span class="sub">失'+r.sl+'</span>' : diff(sd)+' <span class="sub">'+r.sw+'-'+r.sl+'</span>'}</td>
       <td class="num mono" style="color:${diffColor(pd)}">${diff(pd)} <span class="sub">${r.pf}-${r.pa}</span></td></tr>`;
     }).join('')}
     </tbody></table></div>
-    <p class="hint" style="margin-top:6px">順位＝①勝数 ②セット差 ③得失点差（小さい数字は 取得-被取得）</p>`;
+    <p class="hint" style="margin-top:6px">順位＝${bySets?'①獲得セット数 ②得失点差':'①勝数 ②セット差 ③得失点差'}（小さい数字は 取得-被取得）・⚙️で変更できます</p>`;
   }
   return `<div class="stage">
     <div class="stage-head">
@@ -640,6 +652,7 @@ function openLeague(evId,st){
   if(!st && ev?.team) names[0]=ev.team;
   $('#lgTeams').innerHTML=teamInputs(names,n);
   syncMine(st? st.myIdx : (ev?.team?0:-1));
+  $('#lgRule').value = st? (st.rule||'win') : 'win';
   $('#ovLeague').classList.add('on');
 }
 $('#lgCount').oninput=()=>{
@@ -659,11 +672,11 @@ $('#lgSave').onclick=()=>{
   const name=$('#lgName').value.trim()||'リーグ';
   if(editStage){
     const old=editStage.matches, oldTeams=editStage.teams;
-    editStage.name=name; editStage.myIdx=myIdx;
+    editStage.name=name; editStage.myIdx=myIdx; editStage.rule=$('#lgRule').value;
     editStage.matches=buildMatches(teams,old,oldTeams);
     editStage.teams=teams;
   }else{
-    ev.stages.push({id:uid(),kind:'league',name,teams,myIdx,matches:buildMatches(teams,[])});
+    ev.stages.push({id:uid(),kind:'league',name,teams,myIdx,rule:$('#lgRule').value,matches:buildMatches(teams,[])});
   }
   save(); render(); $('#ovLeague').classList.remove('on');
 };
