@@ -226,9 +226,9 @@ td .sub{color:var(--faint);font-size:10px;font-weight:400}
 <div class="overlay" id="ovMatch"><div class="sheet">
   <h2 id="mTitle">試合を記録</h2>
   <div id="mVs"></div>
-  <div id="mOppWrap" class="fld"><label>対戦相手</label><input type="text" id="mOpp" placeholder="例：Amuse A"></div>
+  <div id="mOppWrap" class="fld"><label>対戦相手</label><input type="text" id="mOpp" autocomplete="off" placeholder="例：Amuse A"></div>
   <div id="mRoundWrap" class="fld"><label>ラウンド</label>
-    <input type="text" id="mRound" list="roundList" placeholder="例：準決勝">
+    <input type="text" id="mRound" autocomplete="off" list="roundList" placeholder="例：準決勝">
     <datalist id="roundList">
       <option value="1回戦"><option value="2回戦"><option value="準々決勝"><option value="準決勝"><option value="3位決定戦"><option value="決勝">
     </datalist>
@@ -236,7 +236,7 @@ td .sub{color:var(--faint);font-size:10px;font-weight:400}
   <label style="display:block;font-size:11.5px;color:var(--muted);font-weight:600;margin:10px 2px 6px;letter-spacing:.03em" id="mScoreLbl">スコア</label>
   <div id="setInputs"></div>
   <p class="hint">使うセットだけ入力すればOK（1セットのみでも可）。勝敗は取得セット数で自動判定します。</p>
-  <div class="fld"><label>メモ</label><input type="text" id="mMemo" placeholder="任意"></div>
+  <div class="fld"><label>メモ</label><input type="text" id="mMemo" autocomplete="off" placeholder="任意"></div>
   <button class="btn primary" id="mSave" style="margin-top:4px">保存</button>
   <div class="row" style="margin-top:8px">
     <button class="btn" id="mCancel">キャンセル</button>
@@ -685,14 +685,29 @@ $('#tnSave').onclick=()=>{
 };
 
 /* ===== 試合シート ===== */
-function setInputsHTML(sets){
-  return [0,1,2].map(i=>{
-    const s=sets[i]||['',''];
-    return `<div class="setrow"><span class="lbl">S${i+1}</span>
-      <input type="number" inputmode="numeric" min="0" id="s${i}a" value="${esc(s[0]??'')}">
-      <span class="sep">－</span>
-      <input type="number" inputmode="numeric" min="0" id="s${i}b" value="${esc(s[1]??'')}"></div>`;
-  }).join('');
+/* スコア欄は毎回作り直し、値は value属性ではなくプロパティで入れる。
+   （id を使い回すと Safari が前回の入力値を復元してしまうため class 参照にしている） */
+function fillSets(sets){
+  const box=$('#setInputs');
+  box.innerHTML=[0,1,2].map(i=>`<div class="setrow"><span class="lbl">S${i+1}</span>
+    <input type="number" inputmode="numeric" min="0" autocomplete="off" class="sa">
+    <span class="sep">－</span>
+    <input type="number" inputmode="numeric" min="0" autocomplete="off" class="sb"></div>`).join('');
+  const A=box.querySelectorAll('.sa'), B=box.querySelectorAll('.sb');
+  for(let i=0;i<3;i++){
+    const s=(sets&&sets[i])||['',''];
+    A[i].value=(s[0]??'')===''?'':String(s[0]);
+    B[i].value=(s[1]??'')===''?'':String(s[1]);
+  }
+  box.querySelectorAll('input').forEach(el=>{ el.onfocus=()=>el.select(); }); /* 触ったら全選択→上書きしやすく */
+}
+function readSets(){
+  const A=[...$('#setInputs').querySelectorAll('.sa')], B=[...$('#setInputs').querySelectorAll('.sb')];
+  return A.map((el,i)=>[el.value,B[i].value]).filter(s=>s[0]!==''||s[1]!=='');
+}
+function closeMatch(){
+  $('#ovMatch').classList.remove('on');
+  fillSets([]); $('#mOpp').value=''; $('#mRound').value=''; $('#mMemo').value=''; mCtx=null;
 }
 function findStage(evId,stId){
   const ev=data.events.find(e=>e.id===evId);
@@ -715,29 +730,29 @@ function openMatch(evId,stId,mid){
       <span style="flex:none;color:var(--faint)">－</span>
       <span class="side">${esc(B)}</span></div>`;
     $('#mScoreLbl').textContent=`スコア（${A} － ${B}）`;
-    $('#setInputs').innerHTML=setInputsHTML(rev? (m.sets||[]).map(s=>[s[1],s[0]]) : (m.sets||[]));
+    fillSets(rev? (m.sets||[]).map(s=>[s[1],s[0]]) : (m.sets||[]));
     $('#mMemo').value=m.memo||'';
   }else{
     $('#mTitle').textContent= m? '試合を編集':'試合を追加';
     $('#mOpp').value=m? (m.opp||''):'';
     $('#mRound').value=m? (m.round||''):'';
     $('#mScoreLbl').textContent='スコア（自分 － 相手）';
-    $('#setInputs').innerHTML=setInputsHTML(m? (m.sets||[]):[]);
+    fillSets(m? (m.sets||[]):[]);
     $('#mMemo').value=m? (m.memo||''):'';
     $('#mDel').hidden=!m;
   }
   $('#ovMatch').classList.add('on');
 }
-$('#mCancel').onclick=()=>$('#ovMatch').classList.remove('on');
+$('#mCancel').onclick=closeMatch;
 $('#mDel').onclick=()=>{
   const [ev,st]=findStage(mCtx.evId,mCtx.stId); if(!st) return;
   if(!confirm('この試合の記録を削除しますか？')) return;
   st.matches=st.matches.filter(m=>m.id!==mCtx.mid);
-  save(); render(); $('#ovMatch').classList.remove('on');
+  save(); render(); closeMatch();
 };
 $('#mSave').onclick=()=>{
   const [ev,st]=findStage(mCtx.evId,mCtx.stId); if(!st) return;
-  let sets=[0,1,2].map(i=>[$('#s'+i+'a').value,$('#s'+i+'b').value]).filter(s=>s[0]!==''||s[1]!=='');
+  let sets=readSets();
   const memo=$('#mMemo').value.trim();
   if(st.kind==='league'){
     const m=st.matches.find(x=>x.id===mCtx.mid); if(!m) return;
@@ -748,7 +763,7 @@ $('#mSave').onclick=()=>{
     if(mCtx.mid) Object.assign(st.matches.find(x=>x.id===mCtx.mid),o);
     else st.matches.push({id:uid(),...o});
   }
-  save(); render(); $('#ovMatch').classList.remove('on');
+  save(); render(); closeMatch();
 };
 
 /* ===== クリック委譲 ===== */
@@ -778,7 +793,10 @@ $('#events').addEventListener('click',e=>{
     }
   }
 });
-document.querySelectorAll('.overlay').forEach(o=>o.addEventListener('click',e=>{ if(e.target===o) o.classList.remove('on'); }));
+document.querySelectorAll('.overlay').forEach(o=>o.addEventListener('click',e=>{
+  if(e.target!==o) return;
+  if(o.id==='ovMatch') closeMatch(); else o.classList.remove('on');
+}));
 
 /* ===== バックアップ ===== */
 $('#btnSave').onclick=()=>{
